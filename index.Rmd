@@ -1,0 +1,139 @@
+---
+title: "DDP - Crime in Atlanta"
+author: "Jeffrey Strickland"
+date: "1/15/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE, fig.width=6.5, fig.height=4, scipen = 1000000)
+```
+
+## Introduction
+In this project we want to demonstrate how machine learning (clustering) and spatial visualization can inform crime prevention authorities in major cities. For our spatial visualization, we use the Leaflet-package. Analyzing factors that may affect unlawful behavior is beyond the scope of this project[1].
+
+## Install R libraries
+The following R packages are required for this project:
+```{r crime01, results='hide'}
+library(readr); library(dplyr); library(DT); library(ggrepel); library(leaflet)
+```
+# The Crime Data
+## About the Data
+
+The data we use for this project was downloaded from the Atlanta Police Department (PD) website (www.atlantapd.org). The data represent crimes in six policing zones (precincts). The data was contained in ten ZIP files, one for each year from 2009 to 2018 (partial). We joined the comma separated sets (CSV) sets together in Excel and the resulting set is atlanta_crime_10yr.xls, with 619663 records and thirteen variables, name as follows (I renamed some of them):
+
+* IncidntNum (T) Incident number
+* Category (T) Crime category, i.e., larceny/theft
+* Descript (T)
+* DayOfWeek (T)
+* Date (D Date: DD/MM/YYYY
+* Time (T) Time: 24-hour system
+* PdDistrict (T) Police district where incident occurred
+* Resolution (T) Resolution of the crime
+* Address (T) Address of the crime
+* X (N) Longitude
+* Y (N) Latitude
+* Location (T) Lat/long
+* PdId (N) Police Department ID
+
+
+### Read the data
+Here we load the data using readr and read_csv(). For reproducibility, we include the source of the data.
+
+```{r crime02, echo = TRUE}
+# path <- "https://github.com/stricje1/VIT_University/blob/master/Crime_Analysis_Mapping/data/atlanta_crime_4yr.zip"
+path <- "c:\\Users\\jeff\\Documents\\VIT_University\\data\\atlanta_crime_4yr.csv"
+df <- read_csv(path)
+```
+
+### Display the data using DT and datatable().
+Here, we use the `DT` package to generate a datatable of crime incidences by category, description, etc. [2]
+
+```{r}
+df_sub <- df[1:100,]  # display the first 100 rows
+df_sub$Time <- as.character(df_sub$Time) 
+datatable(df_sub, options = list(pageLength = 5,scrollX='400px'))
+```
+
+### Preprocess Data
+Here we apply `sprintf()`, a wrapper for the C function `sprintf`, that returns a character vector containing a formatted combination of text and variable values.
+
+```{r crime04, echo = TRUE}
+sprintf("Number of Rows in Dataframe: %s", format(nrow(df),big.mark = ","))
+```
+
+The All-Caps text is difficult to read, so we coerce the text in the appropriate columns into proper case. First, we define a function `proper_case` to perform the task. [2]
+
+```{r crime05}
+proper_case <- function(x) {
+  return (gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2" , x, perl=TRUE))
+}
+```
+
+Now, we apply `proper_case()` to the dataframe headings and construct the datatable.
+
+```{r}
+df <- df %>% mutate(Category = proper_case(Category),
+                    Descript = proper_case(Descript),
+                    PdDistrict = proper_case(PdDistrict),
+                    Resolution = proper_case(Resolution),
+                    Time = as.character(Time))
+df_sub <- df[1:100,]  # display the first 100 rows
+datatable(df_sub, options = list(pageLength = 5,scrollX='400px'))
+```
+
+## Visualize Data
+
+### Map Layers and HTML Widgets
+In this section, we use the `leaflet()` function. It creates a Leaflet map widget using `htmlwidgets`. The widget can be rendered on HTML pages generated from R Markdown. In addition to matrices and data frames, `leaflet` supports spatial objects from the sp package and spatial data frames from the sf package.
+We create a Leaflet map with these basic steps: First, create a map widget by calling `leaflet()`. Next, we add layers (i.e., features) to the map by using layer functions (e.g. `addTiles`, `addMarkers`, `addPolygons`) to modify the map widget. Then you keep adding layers or stop when satified with the result.
+
+### Map Markers
+We will add a tile layer from a known map provider, using the leaflet function `addProviderTiles()`. A list of providers can be found at http://leaflet-extras.github.io/leaflet-providers/preview/.  We will also add graphics elements and layers to the map widget with `addCondtroll(addTiles)`.
+We use markers to call out points on the map. Marker locations are expressed in latitude/longitude coordinates, and can either appear as icons or as circles. When there are a large number of markers on a map as in our case with crimes, we can cluster them together.
+
+Now, we define crime incident locations on the map employing `leaflet`, which we use for our popups. 
+
+```{r crime07, echo = TRUE}
+data <- df[1:10000,] # display the first 10,000 rows
+data$popup <- paste("<b>Incident #: </b>", data$IncidntNum, "<br>", "<b>Category: </b>", data$Category,
+                    "<br>", "<b>Description: </b>", data$Descript,
+                    "<br>", "<b>Day of week: </b>", data$DayOfWeek,
+                    "<br>", "<b>Date: </b>", data$Date,
+                    "<br>", "<b>Time: </b>", data$Time,
+                    "<br>", "<b>PD district: </b>", data$PdDistrict,
+                    "<br>", "<b>Resolution: </b>", data$Resolution,
+                    "<br>", "<b>Address: </b>", data$Address,
+                    "<br>", "<b>Longitude: </b>", data$X,
+                    "<br>", "<b>Latitude: </b>", data$Y)
+```
+
+In this manner, we can click icons on the map to show incident details. We need to set up some generate some parameters that we concatenate or "paste" together to form these incident descriptions. For example, the concatenated strings `pdata$popup`, provides the content of the second incident as shown here:
+
+```{r crime08}
+data$popup[1]
+```
+### The Leaflet Map
+The outcome of our Leaflet map shows clusters of crime in the city limits. Clicking on a cluster like the one with 876 crimes in East Atlanta (along I-20) results in smaller clusters. These can also be "zoomed-in" to reveal smaller clusters and eventually individual incidences. These individual crimes have pop-up markers to show the crime details. The +/- toggles zoom in and out as well.
+
+```{r crime09, echo = TRUE}
+leaflet(data, width = "100%") %>% addTiles() %>%
+  addTiles(group = "OSM (default)") %>%
+  addProviderTiles(provider = "Esri.WorldStreetMap",group = "World StreetMap") %>%
+  addProviderTiles(provider = "Esri.WorldImagery",group = "World Imagery") %>%
+  # addProviderTiles(provider = "NASAGIBS.ViirsEarthAtNight2012",group = "Nighttime Imagery") %>%
+  addMarkers(lng = ~X, lat = ~Y, popup = data$popup, clusterOptions = markerClusterOptions()) %>%
+  addLayersControl(
+    baseGroups = c("OSM (default)","World StreetMap", "World Imagery"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+## Conclusion
+
+Major cities throughout the United States perform this kind of analysis, and I introduced it to Chennai, India in 2018, while teaching data analytics at the Vellore Institute of Technology. 
+
+## References
+
+[1] Strickland, J. (2019). Predictive Crime Analysis using R. Lulu.com. ISBN 978-0-359-43159-5.
+
+[2] Strickland, J. (2017). Data Science Applications using R. Lulu.com. ISBN 978-0-359-81042-0.
